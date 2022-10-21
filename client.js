@@ -20,16 +20,6 @@ if (argv.help) {
   process.exit(-1)
 }
 
-if (!+argv.p) {
-  console.error('Error: proxy port invalid')
-  process.exit(-1)
-}
-
-if (!argv.c) {
-  console.error('Error: conf invalid')
-  process.exit(-1)
-}
-
 let conf = null
 
 try {
@@ -39,42 +29,63 @@ try {
   process.exit(-1)
 }
 
-const peer = argv.s || conf.peer
-if (!peer) {
-  console.error('Error: peer is invalid')
+if (!argv.c) {
+  console.error('Error: conf invalid')
   process.exit(-1)
 }
 
 const debug = argv.debug
 
 const keyfile = argv.k || conf.keyfile
+
 const dht = new HyperDHT({
   keyPair: keyfile && parseKeyPair(fs.readFileSync(keyfile))
 })
 
-const stats = {}
+if (conf.map) {
+  return Object.entries(conf.map).map(([s, p]) => {
+    createProxy(s, +p, debug)
+  })
+} else {
+  if (!+argv.p) {
+    console.error('Error: proxy port invalid')
+    process.exit(-1)
+  }
 
-const proxy = net.createServer({ allowHalfOpen: true }, c => {
-  return connHandler(c, () => {
-    return dht.connect(Buffer.from(peer, 'hex'), { reusableSocket: true })
-  }, {}, stats)
-})
+  const peer = argv.s || conf.peer
+  if (!peer) {
+    console.error('Error: peer is invalid')
+    process.exit(-1)
+  }
 
-if (debug) {
-  setInterval(() => {
-    console.log('connection stats', stats)
-  }, 5000)
+  createProxy(peer, +argv.p)
 }
 
-proxy.listen(+argv.p, () => {
-  console.log(`Server ready @${argv.p}`)
-})
+function createProxy (s, p) {
+  const stats = {}
 
-process.once('SIGINT', () => {
-  dht.destroy().then(() => {
-    process.exit()
+  const proxy = net.createServer({ allowHalfOpen: true }, c => {
+    return connHandler(c, () => {
+      return dht.connect(Buffer.from(s, 'hex'), { reusableSocket: true })
+    }, {}, stats)
   })
-})
+
+  if (debug) {
+    setInterval(() => {
+      console.log('connection stats', stats)
+    }, 5000)
+  }
+
+  proxy.listen(p, () => {
+    console.log(`Server ready @${p}`)
+  })
+
+  process.once('SIGINT', () => {
+    dht.destroy().then(() => {
+      process.exit()
+    })
+  })
+}
 
 function parseKeyPair (k) {
   const kp = JSON.parse(k)
